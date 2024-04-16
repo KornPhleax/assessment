@@ -27,10 +27,6 @@ resource "google_compute_instance" "vm_instance" {
     sudo useradd -m -p ${random_password.password[count.index].bcrypt_hash} -s /bin/bash admin
     SCRIPT
 
-  #metadata = {
-  #  ssh-keys = "ffhmichels:${file("${var.public_key_file}")}"
-  #}
-
   boot_disk {
     initialize_params {
       image = var.vm_image
@@ -38,13 +34,11 @@ resource "google_compute_instance" "vm_instance" {
   }
 
   network_interface {
-    network    = "vpc-network"
-    subnetwork = google_compute_subnetwork.internal-subnet.name
+    network    = "default"
   }
 
   depends_on = [ 
     google_compute_firewall.icmp-rule,
-    google_compute_firewall.ssh-rule,
   ]
 }
 
