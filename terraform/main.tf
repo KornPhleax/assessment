@@ -17,6 +17,7 @@ provider "google" {
 resource "random_password" "password" {
   length = 20
   count = var.vm_count
+  override_special = "!#$%*()-_=+[]{}:?"
 }
 
 resource "google_compute_instance" "vm_instance" {
@@ -24,7 +25,7 @@ resource "google_compute_instance" "vm_instance" {
   machine_type = "e2-micro"
   count = var.vm_count
   metadata_startup_script = <<SCRIPT
-    sudo useradd -m -p ${random_password.password[count.index].bcrypt_hash} -s /bin/bash admin
+    apt-get update && apt-get -y install whois && useradd -m -G google-sudoers -p $(mkpasswd -m sha-512 "${random_password.password[count.index].result}") -s /bin/bash admin
     SCRIPT
 
   #metadata = {
