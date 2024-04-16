@@ -1,0 +1,7 @@
+TF_Assessment_BCI_OPS.txt
+.terraform/
+terraform
+terraform.pub
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
