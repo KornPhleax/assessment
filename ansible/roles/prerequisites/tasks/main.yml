@@ -1,0 +1,118 @@
+---
+# check all prerequisites for installing k8s on host
+
+- name: ensure group "kube" exists
+  group:
+    name: kube
+    state: present
+
+- name: adding existing user '{{ ansible_user }}' to group kube
+  user:
+    name: '{{ ansible_user }}'
+    groups: kube
+    append: yes
+
+- name: install docker prerequisites
+  apt:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ packages_to_install }}"
+
+- name: install requests module on remote
+  pip: 
+    name: "{{ item }}"
+  loop: ["requests", "kubernetes"]
+
+- name: add Docker GPG apt Key
+  apt_key:
+    url: https://download.docker.com/linux/debian/gpg
+    state: present
+
+- name: add Docker Repository
+  apt_repository:
+    repo: "deb https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+    state: present
+
+- name: update apt and install docker-ce
+  apt:
+    name: "{{ item }}"
+    state: latest
+    update_cache: true
+  loop: ['docker-ce', 'docker-ce-cli', 'containerd.io']
+
+- name: adding existing user "{{ ansible_user }}" to group docker
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: yes
+
+- name: add kernel modules to autoload on boot
+  lineinfile:
+    path: "/etc/modules-load.d/containerd.conf"
+    create: true
+    line: "{{ item }}"
+  with_items: "{{ kernel_modules }}"
+
+- name: enable kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ kernel_modules }}"
+
+- name: add cri config
+  copy:
+    dest: "/etc/sysctl.d/99-kubernetes-cri.conf"
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.ipv4.ip_forward                 = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+
+- name: reload sysctl
+  command: sysctl --system
+
+- name: generate default containerd config
+  command: containerd config default
+  register: containerd_default_config
+
+- name: Write the output to a file
+  copy:
+    dest: "/etc/containerd/config.toml" 
+    content: "{{ containerd_default_config.stdout }}"
+
+- name: enable systemd cgroup for containerd
+  replace:
+    path: "/etc/containerd/config.toml"
+    regexp: '(\s+)SystemdCgroup = false(\s+.*)?$'
+    replace: '\1SystemdCgroup = true\2'
+
+- name: Restart service containerd
+  systemd_service:
+    state: restarted
+    name: containerd
+
+- name: add opensuse GPG apt Key
+  apt_key:
+    url: "https://download.opensuse.org/repositories/devel:kubic:libcontainers:/stable:/cri-o/{{ os_version }}/Release.key"
+    state: present
+
+- name: add cri-o Repository
+  apt_repository:
+    repo: "deb http://download.opensuse.org/repositories/devel:kubic:libcontainers:/stable:/cri-o/{{ os_version }}/ /"
+    state: present
+
+- name: update apt cache and install cri-tools
+  apt:
+    name: "cri-tools"
+    state: latest
+    update_cache: true
+
+- name: update crictl socket
+  copy:
+    dest: "/etc/crictl.yaml"
+    content: |
+      runtime-endpoint: unix:///run/containerd/containerd.sock
+      image-endpoint: unix:///run/containerd/containerd.sock
+      timeout: 2
+      debug: false
+      pull-image-on-create: false
+

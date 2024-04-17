@@ -1,0 +1,13 @@
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: {{ kube_api_version }}
+apiServer:
+  extraArgs:
+    service-node-port-range: 80-22767
+
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+nodeRegistration:
+  criSocket: "unix:///var/run/containerd/containerd.sock"

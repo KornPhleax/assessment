@@ -1,0 +1,39 @@
+---
+# playbook installing k8s on a single node
+
+- name: Install k8s on host
+  hosts: cloud
+
+  vars:
+    ansible_user: "{{ user }}"
+  
+  vars_files:
+  - ./vault.yml
+
+  tasks:
+  - name: 
+    include_role:
+      name: prerequisites
+    vars:
+      packages_to_install: ['apt-transport-https', 'ca-certificates', 'curl', 'gnupg', 'lsb-release', 'python3-pip']
+      kernel_modules: ['overlay', 'br_netfilter']
+      os_version: "Debian_11"
+  
+  - name:
+    include_role:
+      name: install_kubernetes
+    vars:
+      kube_repo_version: 1.29
+      kube_api_version: 1.29.4
+      kube_package_version: 1.29.3-1.1
+      weave_version: 2.8.1
+
+  - name:
+    include_role:
+      name: deploy_todo
+    vars:
+      replicas: 2
+      kubernetes_namespace: todo-app
+      kubernets_app_label: todo-app
+      letsencrypt_server: https://acme-v02.api.letsencrypt.org/directory
+      letsencrypt_email: felix@test.de

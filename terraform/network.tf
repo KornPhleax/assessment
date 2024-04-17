@@ -16,7 +16,7 @@ resource "google_compute_subnetwork" "internal-subnet" {
 
 resource "google_compute_firewall" "ssh-rule" {
   project = var.project_id
-  name    = "allow-ssh"
+  name    = "allow-ssh-from-google"
   network = "vpc-network"
 
   allow {
@@ -32,7 +32,7 @@ resource "google_compute_firewall" "ssh-rule" {
 
 resource "google_compute_firewall" "icmp-rule" {
   project = var.project_id
-  name    = "allow-ping"
+  name    = "allow-ping-from-internal"
   network = "vpc-network"
 
   allow {

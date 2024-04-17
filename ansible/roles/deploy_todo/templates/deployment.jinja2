@@ -1,0 +1,37 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-app
+  namespace: {{ kubernetes_namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: todo-app
+  replicas: {{ replicas }}
+  template:
+    metadata:
+      labels:
+        app: {{ kubernets_app_label }}
+    spec:
+      containers:
+        - image: todo-app:latest
+          imagePullPolicy: Never
+          name: todo-app
+          ports:
+          - containerPort: 3000
+          env:
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: user_password
+                name: mysql-user-credentials
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                key: user
+                name: mysql-user-credentials
+          - name: MYSQL_DB
+            value: todo
+          - name: MYSQL_HOST
+            value: mysql

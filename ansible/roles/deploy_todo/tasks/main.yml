@@ -1,0 +1,96 @@
+---
+# build and deploy todo app source into kubernetes 
+# -> https://github.com/docker/getting-started-app.git
+
+- name: verify image is not already built
+  shell:
+    cmd: 'sudo crictl image ls | grep todo-app'
+  register: images
+  failed_when: ( images.rc not in [ 0, 1 ] )
+
+- name: clone a repository
+  git:
+    repo: https://github.com/docker/getting-started-app.git
+    dest: "/home/{{ ansible_user }}/getting-started-app/"
+    clone: yes
+    update: yes
+
+- name: copy Dockerfile into app dir
+  copy:
+    src: "{{ role_path }}/files/Dockerfile"
+    dest: "/home/{{ ansible_user }}/getting-started-app/Dockerfile"
+    remote_src: no
+  when: images.rc == 1
+
+- name: build image with docker build
+  community.docker.docker_image:
+    name: todo-app
+    build:
+      path: /home/{{ ansible_user }}/getting-started-app/
+    source: build
+  when: images.rc == 1
+
+- name: export image from docker & import into kubernetes
+  shell: 
+    cmd: "docker save todo-app:latest > todo.tar && sudo ctr -n=k8s.io images import todo.tar"
+  when: images.rc == 1
+
+- name: create namespace {{ kubernetes_namespace }}
+  kubernetes.core.k8s:
+    name: "{{ kubernetes_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: create mysql persistentvolume
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ role_path }}/templates/persistentvolume.jinja2"
+
+- name: create mysql secret
+  kubernetes.core.k8s:
+    state: present
+    definition: 
+      apiVersion: v1
+      kind: Secret
+      type: Opaque    
+      metadata:
+        name: mysql-user-credentials
+        namespace: "{{ kubernetes_namespace }}"
+      data:
+        root_password: "{{ mysql_root_password | b64encode }}"
+        user: "{{ mysql_user | b64encode }}"
+        user_password: "{{ mysql_user_password | b64encode }}"
+
+- name: create mysql configmap with init script
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ role_path }}/templates/init_mysql.jinja2"
+
+- name: create mysql deployment
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ role_path }}/templates/mysql.jinja2"
+
+- name: wait for mysql to be ready
+  shell: "kubectl rollout status deploy mysql -n {{ kubernetes_namespace }} --timeout=120s"
+
+- name: create todo-app deployment
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ role_path }}/templates/deployment.jinja2"
+
+- name: create todo-app service
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ role_path }}/templates/service.jinja2"
+
+- name: create letsencrypt issuer
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ role_path }}/templates/issuer.jinja2"
+
+- name: create todo-app ingress
+  kubernetes.core.k8s:
+    state: present
+    template: "{{ role_path }}/templates/ingress.jinja2"

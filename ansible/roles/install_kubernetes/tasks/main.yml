@@ -1,0 +1,115 @@
+---
+# tasks to install kubernetes
+
+- name: add kube GPG apt Key
+  apt_key:
+    url: "https://pkgs.k8s.io/core:/stable:/v{{ kube_repo_version }}/deb/Release.key"
+    state: present
+
+- name: add kube repository
+  apt_repository:
+    repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kube_repo_version }}/deb/ /"
+    state: present
+
+- name: install kubelet, kubeadm
+  apt:
+    name: "{{ item }}={{ kube_package_version }}"
+    state: present
+    update_cache: true
+  loop: [ "kubelet", "kubeadm"]
+
+- name: disable autoupdate for kubelet, kubeadm and kubectl
+  dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: [ "kubelet", "kubeadm", "kubectl"]
+
+- name: check if rules file exists
+  stat: 
+    path: /etc/kubernetes/kubelet.conf
+  register: kubernetes_installed
+
+- name: copy kubeadm custom config
+  template:
+    src: "{{ role_path }}/templates/kubeadm_config.jinja2"
+    dest: /tmp/kubeadm.yaml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: run kubeadm init
+  command: |
+    kubeadm init \
+    --config /tmp/kubeadm.yaml
+  when: kubernetes_installed.stat.exists == false
+
+- name: create .kube directory for "{{ ansible_user }}"
+  file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0744"
+
+- name: copy default kubeconfig to "{{ ansible_user }}" home
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0644"
+    remote_src: yes
+
+- name: create .kube directory for root
+  file:
+    path: "/root/.kube"
+    state: directory
+    owner: root
+    group: root
+    mode: "0744"
+
+- name: copy default kubeconfig to root home
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/root/.kube/config"
+    owner: root
+    group: root
+    mode: "0644"
+    remote_src: yes
+
+- name: verify node has taints
+  shell:
+    cmd: "kubectl --kubeconfig=/home/{{ ansible_user }}/.kube/config get nodes {{ inventory_hostname_short }} -o yaml | grep taints"
+  register: has_taints
+  failed_when: ( has_taints.rc not in [ 0, 1 ] )
+
+- name: install weave network plugin into cluster
+  command: "kubectl --kubeconfig=/home/{{ ansible_user }}/.kube/config apply -f https://github.com/weaveworks/weave/releases/download/v{{ weave_version }}/weave-daemonset-k8s.yaml"
+  when: has_taints.stdout != ""
+
+- name: mark single node in cluster as worker
+  command: "kubectl --kubeconfig=/home/{{ ansible_user }}/.kube/config label node {{ inventory_hostname_short }} node-role.kubernetes.io/worker="
+  when: has_taints.stdout != ""
+
+- name: remove taints, make controlplane scheduleable
+  command: "kubectl --kubeconfig=/home/{{ ansible_user }}/.kube/config taint nodes {{ inventory_hostname_short }} node-role.kubernetes.io/control-plane-"
+  when: has_taints.stdout != ""
+
+- name: create a ingress-nginx
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('file', '{{ role_path }}/files/ingress-nginx.yaml') | from_yaml_all }}"
+
+- name: donwload cert-manager
+  get_url:
+    url: https://github.com/jetstack/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+    dest: "/home/{{ ansible_user }}/cert-manager.yaml"
+    mode: '0664'
+
+- name: install cert-manager
+  kubernetes.core.k8s:
+    state: present
+    src: "/home/{{ ansible_user }}/cert-manager.yaml"
+
+- name: wait for cert-manager to be ready
+  shell: kubectl rollout status deploy cert-manager -n cert-manager --timeout=120s

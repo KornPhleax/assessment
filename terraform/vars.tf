@@ -12,32 +12,32 @@ variable "vm_count" {
 
 variable "project_id" {
   type = string
-  default = "assessment-420408"
 }
 
 variable "zone" {
     type = string
-    default = "us-east1-b"
 }
 
 variable "region" {
   type = string
-  default = "us-east1"
 }
 
 variable "private_key_file" {
   type = string
-  default = "./terraform"
   sensitive   = true
 }
 
 variable "public_key_file" {
   type = string
-  default = "./terraform.pub"
   sensitive   = true
 }
 
 variable "vm_image" {
-  type = string
-  default = "debian-cloud/debian-11"
+  type     = list(string)
+  nullable = false
+}
+
+variable "vm_flavor" {
+  type     = list(string)
+  nullable = false
 }

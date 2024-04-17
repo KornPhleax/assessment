@@ -1,0 +1,63 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: {{ kubernetes_namespace }}
+spec:
+  ports:
+  - port: 3306
+  selector:
+    app: mysql
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: {{ kubernetes_namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - image: mysql:5.6
+        name: mysql
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: root_password
+              name: mysql-user-credentials
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-persistent-storage
+          mountPath: /var/lib/mysql
+        - name: mysql-init-script-volume
+          mountPath: /etc/mysql/init
+        - name: mysql-credentials-volume
+          mountPath: /etc/mysql/credentials
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/bash", "-c", "/etc/mysql/init/init-user.sh"]
+      volumes:
+      - name: mysql-persistent-storage
+        persistentVolumeClaim:
+          claimName: mysql-pv-claim
+      - name: mysql-init-script-volume
+        configMap:
+          name: mysql-init-script
+          defaultMode: 0777
+      - name: mysql-credentials-volume
+        secret:
+          secretName: mysql-user-credentials
